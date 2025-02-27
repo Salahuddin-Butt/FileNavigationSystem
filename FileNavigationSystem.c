@@ -38,6 +38,7 @@ typedef struct {
 
 MemoryBlock memory[MEMORY_SIZE];
 int memory_blocks = 0;
+char *clipboard_buffer = NULL; // Buffer to store copied file content
 
 void list_files(const char *path);
 void change_directory(const char *path);
@@ -45,7 +46,7 @@ void create_file(const char *filename);
 void remove_file(const char *filename);
 void *execute_process(void *arg);
 void schedule_processes(Process processes[], int count);
-void authenticate_user();
+void authenticate_user(int *authenticated);
 void allocate_memory(int size);
 void deallocate_memory(int block_number);
 void display_memory();
@@ -53,6 +54,8 @@ void error(const char *msg);
 void flush_input();
 void disable_echo();
 void enable_echo();
+void copy_file(const char *source_filename);
+void paste_file(const char *destination_filename);
 
 int main() {
     char command[256];
@@ -74,7 +77,7 @@ int main() {
     }
 
     while (1) {
-        printf("\nEnter command (ls, cd, touch, rm, run, alloc, free, mem, exit): ");
+        printf("\nEnter command (ls, cd, touch, rm, run, alloc, free, mem, copy, paste, exit): ");
         if (scanf("%255s", command) != 1) {
             error("Invalid input");
             flush_input();
@@ -130,12 +133,32 @@ int main() {
             deallocate_memory(block_number);
         } else if (strcmp(command, "mem") == 0) {
             display_memory();
+        } else if (strcmp(command, "copy") == 0) {
+            printf("Enter filename to copy: ");
+            if (scanf("%255s", filename) != 1) {
+                error("Invalid input");
+                flush_input();
+                continue;
+            }
+            copy_file(filename);
+        } else if (strcmp(command, "paste") == 0) {
+            printf("Enter filename to paste: ");
+            if (scanf("%255s", filename) != 1) {
+                error("Invalid input");
+                flush_input();
+                continue;
+            }
+            paste_file(filename);
         } else if (strcmp(command, "exit") == 0) {
             printf("Exiting program.\n");
             break;
         } else {
             printf("Invalid command\n");
         }
+    }
+
+    if (clipboard_buffer != NULL) {
+        free(clipboard_buffer);
     }
 
     return 0;
@@ -302,4 +325,50 @@ void enable_echo() {
     tcgetattr(STDIN_FILENO, &tty);
     tty.c_lflag |= ECHO;
     tcsetattr(STDIN_FILENO, TCSANOW, &tty);
+}
+
+void copy_file(const char *source_filename) {
+    FILE *source_file = fopen(source_filename, "rb");
+    if (source_file == NULL) {
+        error("fopen");
+        return;
+    }
+
+    fseek(source_file, 0, SEEK_END);
+    long file_size = ftell(source_file);
+    fseek(source_file, 0, SEEK_SET);
+
+    if (clipboard_buffer != NULL) {
+        free(clipboard_buffer);
+    }
+
+    clipboard_buffer = (char *)malloc(file_size + 1);
+    if (clipboard_buffer == NULL) {
+        error("malloc");
+        fclose(source_file);
+        return;
+    }
+
+    fread(clipboard_buffer, 1, file_size, source_file);
+    clipboard_buffer[file_size] = '\0';
+
+    fclose(source_file);
+    printf("File '%s' copied to clipboard.\n", source_filename);
+}
+
+void paste_file(const char *destination_filename) {
+    if (clipboard_buffer == NULL) {
+        printf("Clipboard is empty. Nothing to paste.\n");
+        return;
+    }
+
+    FILE *destination_file = fopen(destination_filename, "wb");
+    if (destination_file == NULL) {
+        error("fopen");
+        return;
+    }
+
+    fwrite(clipboard_buffer, 1, strlen(clipboard_buffer), destination_file);
+    fclose(destination_file);
+    printf("File '%s' pasted successfully.\n", destination_filename);
 }
